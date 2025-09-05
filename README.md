@@ -55,6 +55,9 @@ THEN, in the last line, add
 
 @reboot sudo /usr/bin/python3 /home/pi/midifileplayer/midiplayer.py > /home/pi/mlog.txt
 
+You must create a subdirectory named "midifiles" in /home/pi that will contain the .mid files. The Python code fails if this directory does not exist. (The README mentions creating this directory, but not that it is required)
+You have to create a symbolic link named "sf2" in /home/pi linked to where the .sf2 files are stored (probably /usr/share/sounds/sf2) or the Python code will fail.
+
 there's an SD card image for RasPi Zero 2 here:  
 https://1drv.ms/u/c/5cc3ff9db18d3aed/EeThL7ORdWpCsPFlJCnd7fIBYfMfCscALHBu-Y-uZmMnvg?e=FKUpo0  
 
