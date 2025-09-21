@@ -27,6 +27,8 @@ display_type = "square"
 
 midiin = rtmidi.MidiIn()
 input_ports = midiin.get_ports()
+for i, port in enumerate(input_ports):
+    print(f"{i}: {port}")
 midi_input_index = len(input_ports) - 1
 print(f"Using MIDI input: {input_ports[midi_input_index]}")
 
@@ -65,31 +67,39 @@ def init_buttons():
     button3.when_pressed = handle_button
     button4.when_pressed = handle_button
 
+def midi_callback(message_data, timestamp):
+    message, _ = message_data
+    status = message[0] & 0xF0
+    channel = message[0] & 0x0F
+    note = message[1]
+    velocity = message[2]
+
+    if status == 0x90:  # note_on
+        if velocity > 0:
+            fs.noteon(channel, note, velocity)
+        else:
+            fs.noteoff(channel, note)  # velocity 0 = note_off
+    elif status == 0x80:  # note_off
+        fs.noteoff(channel, note)
+    elif status == 0xB0:  # control_change
+        fs.cc(channel, note, velocity)
+    elif status == 0xC0:  # program_change
+        fs.program_change(channel, note)
+    elif status == 0xE0:  # pitchwheel
+        pitch = (velocity << 7) + note - 8192
+        fs.pitch_bend(channel, pitch)
+
 def midi_listener():
-    global fs
     midiin = rtmidi.MidiIn()
-    input_ports = midiin.get_ports()
-    if not input_ports:
+    ports = midiin.get_ports()
+    if not ports:
         print("No MIDI input ports found.")
         return
-    midiin.open_port(len(input_ports) - 1)
+    midiin.open_port(len(ports) - 1)
+    midiin.set_callback(midi_callback)
     while True:
-        msg = midiin.get_message()
-        if msg:
-            message, delta_time = msg
-            status = message[0] & 0xF0
-            channel = message[0] & 0x0F
-            if status == 0x90 and message[2] > 0:
-                fs.noteon(channel, message[1], message[2])
-            elif status == 0x80 or (status == 0x90 and message[2] == 0):
-                fs.noteoff(channel, message[1])
-            elif status == 0xB0:
-                fs.cc(channel, message[1], message[2])
-            elif status == 0xC0:
-                fs.program_change(channel, message[1])
-            elif status == 0xE0:
-                pitch = (message[2] << 7) + message[1] - 8192
-                fs.pitch_bend(channel, pitch)
+        time.sleep(1)  # Keep thread alive
+
 
 def resetsynth():
     global selectedindex, files, pathes, fs, operation_mode, previous_operation_mode, soundfontname
