@@ -42,7 +42,8 @@ def check_for_updates(repo_path):
         remote_commit = origin.refs[repo.active_branch.name].object.hexsha
         if local_commit != remote_commit:
             print("New updates detected! Pulling latest changes...")
-            origin.pull()
+            remote_ref = origin.refs[repo.active_branch.name]
+            repo.head.reset(commit=remote_ref.commit, index=True, working_tree=True)
             return True
         print("No updates found. Running the script as usual.")
         return False
