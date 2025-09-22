@@ -135,6 +135,10 @@ def handle_button(bt):
                 pathes.append(port)
                 files.append(port)
             if previous_operation_mode == operation_mode:
+                if midiin.is_port_open():
+                    midiin.close_port()
+                midiin.open_port(selectedindex)
+                midiin.set_callback(midi_callback)
                 sfid = fs.sfload(soundfontname)
                 try:
                     select_first_preset(fs, sfid)
