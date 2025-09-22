@@ -73,6 +73,8 @@ def midi_callback(message_data, timestamp):
     channel = message[0] & 0x0F
     note = message[1]
     velocity = message[2]
+    
+    #print(f"Raw MIDI: {[hex(b) for b in message]}")
 
     if status == 0x90:  # note_on
         if velocity > 0:
