@@ -16,7 +16,7 @@ button4 = Button(24)
 
 fs = fluidsynth.Synth()
 fs.start(driver="alsa")
-sfid = fs.sfload(soundfontname)
+sfid = fs.sfload(soundfontname,True)
 
 pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
 files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
@@ -71,10 +71,18 @@ def midi_callback(message_data, timestamp):
     message, _ = message_data
     status = message[0] & 0xF0
     channel = message[0] & 0x0F
-    note = message[1]
-    velocity = message[2]
     
     #print(f"Raw MIDI: {[hex(b) for b in message]}")
+    
+    if status == 0xC0 and len(message) == 2:  # Program Change
+        program = message[1]
+        print(f"Program change to {program} on channel {channel}")
+        fs.program_change(channel, program)
+    
+    note = message[1]
+    velocity = message[2]
+   
+    #print(f"status: {status} channel: {channel}, note: {note}, velocity: {velocity}")
 
     if status == 0x90:  # note_on
         if velocity > 0:
@@ -85,8 +93,6 @@ def midi_callback(message_data, timestamp):
         fs.noteoff(channel, note)
     elif status == 0xB0:  # control_change
         fs.cc(channel, note, velocity)
-    elif status == 0xC0:  # program_change
-        fs.program_change(channel, note)
     elif status == 0xE0:  # pitchwheel
         pitch = (velocity << 7) + note - 8192
         fs.pitch_bend(channel, pitch)
@@ -112,7 +118,7 @@ def resetsynth():
     fs.delete()
     fs = fluidsynth.Synth()
     fs.start(driver="alsa")
-    sfid = fs.sfload(soundfontname)
+    sfid = fs.sfload(soundfontname,True)
 
 def handle_button(bt):
     global selectedindex, files, pathes, fs, operation_mode, previous_operation_mode, soundfontname
@@ -141,7 +147,7 @@ def handle_button(bt):
                     midiin.close_port()
                 midiin.open_port(selectedindex)
                 midiin.set_callback(midi_callback)
-                sfid = fs.sfload(soundfontname)
+                sfid = fs.sfload(soundfontname,True)
                 try:
                     select_first_preset(fs, sfid)
                 except ValueError as e:
@@ -174,7 +180,7 @@ def handle_button(bt):
                 fs.delete()
                 fs = fluidsynth.Synth()
                 fs.start(driver="alsa")
-                sfid = fs.sfload(soundfontname)
+                sfid = fs.sfload(soundfontname,True)
                 fs.play_midi_file(pathes[selectedindex])
             previous_operation_mode = operation_mode
 
