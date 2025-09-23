@@ -76,7 +76,7 @@ def midi_callback(message_data, timestamp):
     
     if status == 0xC0 and len(message) == 2:  # Program Change
         program = message[1]
-        print(f"Program change to {program} on channel {channel}")
+        #print(f"Program change to {program} on channel {channel}")
         fs.program_change(channel, program)
     
     note = message[1]
