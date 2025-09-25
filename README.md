@@ -1,5 +1,5 @@
 # midifileplayer
-Plays back midi files on a Raspberry PI
+Plays back midi files on a Raspberry PI and lets you play sounds on a MIDI keyboard
 
 How to install/use  
 Install 32 bit os lite, bookworm or bullseye
