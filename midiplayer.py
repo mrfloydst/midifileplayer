@@ -183,6 +183,21 @@ def handle_button(bt):
                 sfid = fs.sfload(soundfontname,True)
                 fs.play_midi_file(pathes[selectedindex])
             previous_operation_mode = operation_mode
+    update_display()
+
+def update_display():
+    draw.rectangle((0, 0, disp.width, disp.height), (0, 0, 0))
+    for i, line in enumerate(files):
+        if i >= selectedindex - 6:
+            xi = i
+            if selectedindex > 6:
+                xi = i - (selectedindex - 6)
+            if i == selectedindex:
+                draw.rectangle([10, 10 + (xi * 30), 230, 40 + (xi * 30)], fill=(255, 255, 255))
+                draw.text((10, 10 + (xi * 30)), line, font=font, fill=(0, 0, 0))
+            else:
+                draw.text((10, 10 + (xi * 30)), line, font=font, fill=(255, 255, 255))
+    disp.display(img)
 
 if check_for_updates(repo_path):
     print("Restarting script to apply updates...")
@@ -228,18 +243,8 @@ HEIGHT = disp.height
 img = Image.new("RGB", (WIDTH, HEIGHT), color=(0, 0, 0))
 draw = ImageDraw.Draw(img)
 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+update_display()
 
+# Keep the script alive
 while True:
-    time.sleep(0.1)
-    draw.rectangle((0, 0, disp.width, disp.height), (0, 0, 0))
-    for i, line in enumerate(files):
-        if i >= selectedindex - 6:
-            xi = i
-            if selectedindex > 6:
-                xi = i - (selectedindex - 6)
-            if i == selectedindex:
-                draw.rectangle([10, 10 + (xi * 30), 230, 40 + (xi * 30)], fill=(255, 255, 255))
-                draw.text((10, 10 + (xi * 30)), line, font=font, fill=(0, 0, 0))
-            else:
-                draw.text((10, 10 + (xi * 30)), line, font=font, fill=(255, 255, 255))
-    disp.display(img)
+    time.sleep(10)
