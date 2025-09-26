@@ -6,6 +6,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 MESSAGE = ""
 directory = os.path.expanduser("~")
+if(directory=="/root"):
+    directory="/home/pi"
+
 file_extension = '.mid'
 soundfontname = "/usr/share/sounds/sf2/General_MIDI_64_1.6.sf2"
 
