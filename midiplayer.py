@@ -5,7 +5,7 @@ from gpiozero import Button, DigitalOutputDevice
 from PIL import Image, ImageDraw, ImageFont
 
 MESSAGE = ""
-directory = '/home/pi'
+directory = os.path.expanduser("~")
 file_extension = '.mid'
 soundfontname = "/usr/share/sounds/sf2/General_MIDI_64_1.6.sf2"
 
