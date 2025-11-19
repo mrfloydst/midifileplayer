@@ -15,6 +15,15 @@ sudo nano /boot/firmware/config.txt, add
 dtoverlay=hifiberry-dac  
 gpio=25=op,dh
 
+Now activate Bluetooth MIDI:
+sudo nano /lib/systemd/system/bluetooth.service
+Find the line starting with ExecStart=/usr/sbin/bluetoothd and add:
+ExecStart=/usr/sbin/bluetoothd --experimental
+
+Save, and restart the service:
+sudo systemctl daemon-reload
+sudo systemctl restart bluetooth
+
 sudo apt-get install git python3-rpi.gpio python3-spidev python3-pip python3-pil python3-numpy
 sudo pip3 install pidi-display-st7789 --break-system-packages  
 sudo pip3 install gitpython --break-system-packages  
