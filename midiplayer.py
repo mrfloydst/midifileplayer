@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, git, threading, time, os, fluidsynth, st7789, rtmidi
+import sys, git, threading, time, os, fluidsynth, st7789, rtmidi, subprocess, select
 from gpiozero import Button, DigitalOutputDevice
 from PIL import Image, ImageDraw, ImageFont
 
@@ -21,9 +21,10 @@ fs = fluidsynth.Synth()
 fs.start(driver="alsa")
 sfid = fs.sfload(soundfontname,True)
 
-pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
-files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
+pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
+files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
 selectedindex = 0
+use_bluetooth = 0
 
 repo_path = os.path.dirname(os.path.abspath(__file__))
 display_type = "square"
@@ -111,20 +112,211 @@ def midi_listener():
     while True:
         time.sleep(1)  # Keep thread alive
 
+import subprocess, time, select, sys
+
+def _scan_live_advertising(scan_time=8):
+    """
+    Return dict MAC->Name for devices that advertise during the live scan window.
+    Only captures NEW/CHG events seen in real time (no cache).
+    """
+    proc = subprocess.Popen(
+        ["bluetoothctl"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+
+    # start scanning
+    proc.stdin.write("scan on\n")
+    proc.stdin.flush()
+
+    advertising = {}
+    start = time.time()
+    poller = select.poll()
+    poller.register(proc.stdout, select.POLLIN)
+
+    while time.time() - start < scan_time:
+        events = poller.poll(200)  # 200ms
+        for _fd, _ev in events:
+            line = proc.stdout.readline()
+            if not line:
+                continue
+            # bluetoothctl formats to catch:
+            # [NEW] Device MAC NAME
+            # [CHG] Device MAC RSSI: ...
+            # Device MAC NAME   (some builds)
+            line = line.strip()
+            if "Device" in line:
+                parts = line.split()
+                # find MAC (XX:XX:XX:XX:XX:XX) and optional name after it
+                mac = next((p for p in parts if ":" in p and len(p) == 17), None)
+                if mac:
+                    # name is everything after MAC on the line (if present)
+                    idx = line.find(mac)
+                    name = line[idx + len(mac):].strip()
+                    if name.startswith("RSSI"):  # no name on CHG RSSI-only lines
+                        name = advertising.get(mac, "")
+                    advertising[mac] = name or advertising.get(mac, "")
+
+    # stop scanning and exit
+    try:
+        proc.stdin.write("scan off\n")
+        proc.stdin.flush()
+    except Exception:
+        pass
+    proc.stdin.write("exit\n")
+    proc.stdin.flush()
+    proc.wait(timeout=2)
+
+    return advertising
+
+def _paired_connected_now():
+    """
+    Return dict MAC->Name for paired devices that are currently Connected: yes.
+    """
+    connected = {}
+    # list paired devices
+    pd = subprocess.run(["bluetoothctl", "paired-devices"], capture_output=True, text=True)
+    for line in pd.stdout.splitlines():
+        # Format: Device MAC NAME
+        if line.startswith("Device "):
+            parts = line.split(" ", 2)
+            if len(parts) >= 3:
+                mac, name = parts[1], parts[2]
+                info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True)
+                if "Connected: yes" in info.stdout:
+                    connected[mac] = name
+    return connected
+
+def get_online_devices(scan_time=8):
+    global use_bluetooth
+    result = []
+    if use_bluetooth==1:
+        """
+        Return a list of [name, mac] for devices that are online:
+        - Currently advertising (seen during live scan), OR
+        - Currently connected (paired devices with Connected: yes)
+        """
+        adv = _scan_live_advertising(scan_time)
+        con = _paired_connected_now()
+
+        # Union: prefer names from 'adv' when available, else from 'con'
+        macs = set(adv.keys()) | set(con.keys())
+        for mac in macs:
+            name = adv.get(mac) or con.get(mac) or ""
+            # Trim leading punctuation if any
+            name = name.strip()
+            result.append([name, mac])
+    return result
+
+def btctl(cmds, timeout=15):
+    """Run a series of bluetoothctl commands in one session, return combined stdout."""
+    proc = subprocess.Popen(
+        ["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, bufsize=1
+    )
+    for c in cmds:
+        proc.stdin.write(c + "\n")
+        proc.stdin.flush()
+        time.sleep(0.3)
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out = ""
+    return out
+
+def connect_ble_device(mac):
+    global use_bluetooth
+    if use_bluetooth==1:
+        print("Connecting to ${mac}")
+        btctl(["power on", "pairable on", "agent on", "default-agent"])
+        btctl([f"remove {mac}"])  # clear stale record
+
+        # make sure device object exists
+        btctl(["scan on"])
+        time.sleep(5)
+        btctl(["scan off"])
+
+        # try pairing
+        out = btctl([f"pair {mac}"])
+        if "not available" in out.lower():
+            time.sleep(3)
+            btctl(["scan on"]); time.sleep(5); btctl(["scan off"])
+            out = btctl([f"pair {mac}"])
+
+        # trust + connect
+        btctl([f"trust {mac}"])
+        out = btctl([f"connect {mac}"])
+        if "Connection successful" in out or "Connected: yes" in out:
+            print(f"Connected to {mac}")
+            return True
+
+        raise RuntimeError(f"Connect failed for {mac}: {out.strip()}")
 
 def resetsynth():
     global selectedindex, files, pathes, fs, operation_mode, previous_operation_mode, soundfontname
     operation_mode = "main screen"
-    pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
-    files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
+    pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
+    files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
     selectedindex = 0
     fs.delete()
     fs = fluidsynth.Synth()
     fs.start(driver="alsa")
     sfid = fs.sfload(soundfontname,True)
 
+def remove_all_devices():
+    global use_bluetooth
+    macs = []
+    if use_bluetooth==1:
+        print("Removing all BLE Devices")
+        """Remove all registered Bluetooth devices from the controller."""
+        # Get list of paired devices
+        result = subprocess.run(
+            ["bluetoothctl", "devices"],
+            capture_output=True, text=True
+        )
+        for line in result.stdout.splitlines():
+            if line.startswith("Device "):
+                parts = line.split(" ", 2)
+                if len(parts) >= 2:
+                    macs.append(parts[1])
+
+        # Remove each device
+        for mac in macs:
+            print(f"Removing {mac}")
+            subprocess.run(["bluetoothctl", "remove", mac])
+
+    return macs
+
+def wait_for_midi_port(port_name_substring, timeout=10):
+    global use_bluetooth
+    if use_bluetooth==1:
+        print("Wating for MIDI Port")
+        """
+        Wait until a MIDI port containing `port_name_substring` appears.
+        Returns the full port name or None if timeout expires.
+        """
+        midi_in = rtmidi.MidiIn()
+        start = time.time()
+        while time.time() - start < timeout:
+            ports = midi_in.get_ports()
+            for p in ports:
+                if port_name_substring.lower() in p.lower():
+                    return p
+            time.sleep(0.5)  # wait a bit before retrying
+        return None
+
+def index_of_substring(lst, substring):
+    for i, val in enumerate(lst):
+        if substring in val:
+            return i
+    return -1  # return -1 if not found, like JS indexOf
+
 def handle_button(bt):
-    global selectedindex, files, pathes, fs, operation_mode, previous_operation_mode, soundfontname
+    global selectedindex, files, pathes, fs, operation_mode, previous_operation_mode, soundfontname, draw, disp, use_bluetooth
     if str(bt.pin) == "GPIO16":
         selectedindex -= 1
     if str(bt.pin) == "GPIO24":
@@ -134,18 +326,31 @@ def handle_button(bt):
         resetsynth()
     if str(bt.pin) == "GPIO5":
         if operation_mode == "main screen":
-            pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
-            files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE"]
+            pathes = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
+            files = ["MIDI KEYBOARD", "SOUND FONT", "MIDI FILE", "BLUETOOTH"]
             operation_mode = pathes[selectedindex]
-        if operation_mode == "MIDI KEYBOARD":
-            pathes = []
-            files = []
-            midiin = rtmidi.MidiIn()
-            input_ports = midiin.get_ports()
-            for port in input_ports:
-                pathes.append(port)
-                files.append(port)
+        if operation_mode == "BLUETOOTH":
             if previous_operation_mode == operation_mode:
+                operation_mode="main screen"
+                use_bluetooth=selectedindex
+            else:
+                selectedindex=use_bluetooth
+                pathes=["OFF","ON"]
+                files=["OFF","ON"]
+            previous_operation_mode = operation_mode
+        if operation_mode == "MIDI KEYBOARD":
+            midiin = rtmidi.MidiIn()
+            if previous_operation_mode == operation_mode:
+                if(files[selectedindex]!=pathes[selectedindex]):
+                    draw.rectangle([10, 10 + (2 * 30), 230, 40 + (2 * 30)], fill=(235, 235, 235))
+                    draw.text((10, 10 + (2 * 30)), "Please Wait", font=font, fill=(255, 0, 0))
+                    disp.display(img)
+                    remove_all_devices()
+                    print(pathes[selectedindex])
+                    print(files[selectedindex])
+                    connect_ble_device(pathes[selectedindex])
+                    wait_for_midi_port(files[selectedindex])
+                    selectedindex = index_of_substring(midiin.get_ports(), files[selectedindex])
                 if midiin.is_port_open():
                     midiin.close_port()
                 midiin.open_port(selectedindex)
@@ -156,6 +361,21 @@ def handle_button(bt):
                 except ValueError as e:
                     print(e)
                 fs.set_reverb(0.9, 0.5, 0.8, 0.7)
+            else:
+                pathes = []
+                files = []
+                input_ports = midiin.get_ports()
+                for port in input_ports:
+                    pathes.append(port)
+                    files.append(port)
+                # scan for new BT devices only once
+                draw.rectangle([10, 10 + (2 * 30), 230, 40 + (2 * 30)], fill=(235, 235, 235))
+                draw.text((10, 10 + (2 * 30)), "Please Wait", font=font, fill=(255, 0, 0))
+                disp.display(img)
+                remove_all_devices()
+                for mac,name in get_online_devices(7):
+                    pathes.append(name)
+                    files.append(mac)
             previous_operation_mode = operation_mode
         if operation_mode == "SOUND FONT":
             pathes = []
@@ -246,6 +466,10 @@ HEIGHT = disp.height
 img = Image.new("RGB", (WIDTH, HEIGHT), color=(0, 0, 0))
 draw = ImageDraw.Draw(img)
 font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+
+# remove all known bluetooth devices...
+remove_all_devices()
+
 update_display()
 
 # Keep the script alive
