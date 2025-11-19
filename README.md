@@ -8,17 +8,18 @@ ssh to raspberrypi
 mkdir midifiles   # put your midifiles into this folder  
 sudo apt update  
 sudo apt upgrade  
-sudo apt install fluidsynth  
+sudo apt install fluidsynth bluez alsa-utils
 sudo raspi-config  # turn on spi and i2c  
 
 sudo nano /boot/firmware/config.txt, add  
 dtoverlay=hifiberry-dac  
 gpio=25=op,dh
 
-sudo apt-get install git python3-rpi.gpio python3-spidev python3-pip python3-pil python3-numpy  
+sudo apt-get install git python3-rpi.gpio python3-spidev python3-pip python3-pil python3-numpy
 sudo pip3 install pidi-display-st7789 --break-system-packages  
 sudo pip3 install gitpython --break-system-packages  
 sudo pip3 install pyfluidsynth --break-system-packages  
+sudo pip3 install python-rtmidi --break-system-packages    
 sudo pip3 install python-rtmidi --break-system-packages  
 sudo python3 -m pip install mido --break-system-packages  
 git clone  https://github.com/pimoroni/st7789-python  
